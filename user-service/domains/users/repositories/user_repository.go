@@ -8,6 +8,7 @@ import (
 type UserRepository interface {
 	Create(u *entities.User) error
 	FindByEmail(email string) (*entities.User, error)
+	FindByID(id uint) (*entities.User, error)
 }
 
 type userRepo struct{ db *gorm.DB }
@@ -23,6 +24,14 @@ func (r *userRepo) Create(u *entities.User) error {
 func (r *userRepo) FindByEmail(email string) (*entities.User, error) {
 	var u entities.User
 	if err := r.db.Where("email = ?", email).First(&u).Error; err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (r *userRepo) FindByID(id uint) (*entities.User, error) {
+	var u entities.User
+	if err := r.db.First(&u, id).Error; err != nil {
 		return nil, err
 	}
 	return &u, nil
