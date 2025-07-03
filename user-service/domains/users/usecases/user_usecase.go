@@ -17,6 +17,7 @@ import (
 type UserUsecase interface {
 	Register(u *entities.User) error
 	Login(email, pwd string) (string, error)
+	GetProfile(userID uint) (*entities.User, error)
 }
 
 type userUsecase struct {
@@ -68,4 +69,8 @@ func (u *userUsecase) Login(email, pwd string) (string, error) {
 	config.RedisClient.Set(config.Ctx, "access_token:"+tid, buf, time.Until(exp))
 
 	return token, nil
+}
+
+func (u *userUsecase) GetProfile(userID uint) (*entities.User, error) {
+	return u.repo.FindByID(userID)
 }

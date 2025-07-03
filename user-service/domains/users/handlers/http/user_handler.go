@@ -51,7 +51,22 @@ func LoginHandler(uc usecases.UserUsecase) gin.HandlerFunc {
 
 func ProfileHandler(uc usecases.UserUsecase) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		uid, _ := c.Get("user_id")
-		c.JSON(http.StatusOK, gin.H{"user_id": uid})
+		raw, _ := c.Get("user_id")
+		userID := raw.(uint)
+
+		user, err := uc.GetProfile(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load profile"})
+			return
+		}
+
+		resp := responses.ProfileResponse{
+			ID:        user.ID,
+			Username:  user.Username,
+			Email:     user.Email,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
