@@ -49,23 +49,34 @@ func LoginHandler(uc usecases.UserUsecase) gin.HandlerFunc {
 	}
 }
 
-func ProfileHandler(uc usecases.UserUsecase) gin.HandlerFunc {
+func ProfileHandler(uc usecases.UserUsecase, fu usecases.FollowUsecase) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw, _ := c.Get("user_id")
 		userID := raw.(uint)
 
+		// 1) Fetch user
 		user, err := uc.GetProfile(userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load profile"})
 			return
 		}
 
+		// 2) Fetch counts
+		followers, following, err := fu.GetCounts(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load counts"})
+			return
+		}
+
+		// 3) Build response
 		resp := responses.ProfileResponse{
-			ID:        user.ID,
-			Username:  user.Username,
-			Email:     user.Email,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
+			ID:             user.ID,
+			Username:       user.Username,
+			Email:          user.Email,
+			CreatedAt:      user.CreatedAt,
+			UpdatedAt:      user.UpdatedAt,
+			FollowersCount: followers,
+			FollowingCount: following,
 		}
 		c.JSON(http.StatusOK, resp)
 	}
