@@ -13,6 +13,7 @@ type FollowRepository interface {
 	IsFollowing(followerID, followeeID uint) (bool, error)
 	CountFollowers(userID uint) (int64, error)
 	CountFollowing(userID uint) (int64, error)
+	GetFollowingUserIDs(userID uint) ([]uint, error)
 }
 
 type followRepo struct {
@@ -61,4 +62,12 @@ func (r *followRepo) CountFollowing(userID uint) (int64, error) {
 		Where("follower_id = ?", userID).
 		Count(&c).Error
 	return c, err
+}
+
+func (r *followRepo) GetFollowingUserIDs(userID uint) ([]uint, error) {
+	var followees []uint
+	err := r.db.Model(&entities.Follow{}).
+		Where("follower_id = ?", userID).
+		Pluck("followee_id", &followees).Error
+	return followees, err
 }

@@ -9,7 +9,6 @@ import (
 func CleanTags(rawTags []string) []entities.Tag {
 	tags := make([]entities.Tag, 0, len(rawTags))
 	for _, t := range rawTags {
-		// buang prefix # atau @
 		clean := strings.TrimPrefix(t, "#")
 		clean = strings.TrimPrefix(clean, "@")
 

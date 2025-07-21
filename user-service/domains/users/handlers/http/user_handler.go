@@ -54,21 +54,18 @@ func ProfileHandler(uc usecases.UserUsecase, fu usecases.FollowUsecase) gin.Hand
 		raw, _ := c.Get("user_id")
 		userID := raw.(uint)
 
-		// 1) Fetch user
 		user, err := uc.GetProfile(userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load profile"})
 			return
 		}
 
-		// 2) Fetch counts
 		followers, following, err := fu.GetCounts(userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load counts"})
 			return
 		}
 
-		// 3) Build response
 		resp := responses.ProfileResponse{
 			ID:             user.ID,
 			Username:       user.Username,

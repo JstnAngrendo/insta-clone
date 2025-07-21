@@ -20,14 +20,19 @@ type PostUsecase interface {
 
 	GetByUserPaginated(userID uint, page int, size int) ([]entities.Post, int64, error)
 	GetPostsByTagPaginated(tagName string, page int, size int) ([]entities.Post, int64, error)
+	GetTimeline(userID string) ([]entities.Post, error)
 }
 
 type postUC struct {
-	repo repositories.PostRepository
+	userService UserService
+	repo        repositories.PostRepository
 }
 
-func NewPostUsecase(r repositories.PostRepository) PostUsecase {
-	return &postUC{repo: r}
+func NewPostUseCase(userSvc UserService, postRepo repositories.PostRepository) PostUsecase {
+	return &postUC{
+		userService: userSvc,
+		repo:        postRepo,
+	}
 }
 
 func (u *postUC) Create(userID uint, caption, imageURL string) (*entities.Post, error) {
@@ -163,4 +168,20 @@ func (uc *postUC) GetPostsByTagPaginated(tagName string, page int, size int) ([]
 	}
 
 	return posts, total, nil
+}
+
+func (uc *postUC) GetTimeline(userID string) ([]entities.Post, error) {
+	followingIDs, err := uc.userService.GetFollowingUserIDs(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	followingIDs = append(followingIDs, userID)
+
+	posts, err := uc.repo.GetPostsByUserIDs(followingIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return posts, nil
 }

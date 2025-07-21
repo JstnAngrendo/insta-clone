@@ -43,17 +43,14 @@ func (u *userUsecase) Login(email, pwd string) (string, error) {
 		return "", errors.New("invalid credentials")
 	}
 
-	// 1) Create a unique token ID
 	tid := uuid.NewString()
 	exp := time.Now().Add(72 * time.Hour)
 
-	// 2) Sign a JWT that includes BOTH token_id and user_id
 	token, err := utils.GenerateJWT(tid, user.ID, exp)
 	if err != nil {
 		return "", err
 	}
 
-	// 3) Persist to DB
 	at := &entities.AccessToken{
 		ID:        tid,
 		UserID:    user.ID,

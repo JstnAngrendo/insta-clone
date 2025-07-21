@@ -36,6 +36,7 @@ func main() {
 
 	// Protected routes
 	auth := r.Group("/auth")
+	r.GET("/users/:id/following-ids", httpUser.GetFollowingIDsHandler(followUC))
 	auth.Use(middleware.AuthMiddleware())
 	{
 		auth.GET("/profile", httpUser.ProfileHandler(userUC, followUC))
