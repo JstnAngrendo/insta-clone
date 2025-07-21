@@ -16,7 +16,7 @@ func main() {
 		log.Fatalf("failed to create uploads directory: %v", err)
 	}
 	config.InitDatabase()
-	config.DB.AutoMigrate(&entities.Post{}, &entities.PostLike{}, &entities.Tag{})
+	config.DB.AutoMigrate(&entities.Post{}, &entities.PostLike{}, &entities.Tag{}, &entities.Comment{})
 
 	r := router.NewRouter(config.DB)
 

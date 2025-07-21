@@ -9,8 +9,8 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o user-service .
+RUN go build -o post-service .
 
-EXPOSE 8080
+EXPOSE 8081
 
-CMD ["./user-service"]
+CMD ["./post-service"]
