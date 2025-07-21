@@ -21,6 +21,9 @@ type PostUsecase interface {
 	GetByUserPaginated(userID uint, page int, size int) ([]entities.Post, int64, error)
 	GetPostsByTagPaginated(tagName string, page int, size int) ([]entities.Post, int64, error)
 	GetTimeline(userID string) ([]entities.Post, error)
+
+	CreateComment(postID uint, userID uint, content string) error
+	GetComments(postID uint) ([]entities.Comment, error)
 }
 
 type postUC struct {
@@ -184,4 +187,17 @@ func (uc *postUC) GetTimeline(userID string) ([]entities.Post, error) {
 	}
 
 	return posts, nil
+}
+
+func (u *postUC) CreateComment(postID uint, userID uint, content string) error {
+	comment := entities.Comment{
+		PostID:  postID,
+		UserID:  userID,
+		Content: content,
+	}
+	return u.repo.SaveComment(&comment)
+}
+
+func (u *postUC) GetComments(postID uint) ([]entities.Comment, error) {
+	return u.repo.FetchComments(postID)
 }

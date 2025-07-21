@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  user-db:
+    image: postgres:15
+    container_name: user-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${USER_DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+
+  post-db:
+    image: postgres:15
+    container_name: post-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POST_DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5434:5432"
+    volumes:
+      - post-db-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:6379"
+
+  user-service:
+    build:
+      context: ./user-service
+    container_name: user-service
+    ports:
+      - "${USER_SERVICE_PORT}:8080"
+    depends_on:
+      - user-db
+      - redis
+    environment:
+      - DB_HOST=user-db
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${USER_DB_NAME}
+      - REDIS_ADDR=redis:${REDIS_PORT}
+
+  post-service:
+    build:
+      context: ./post-service
+    container_name: post-service
+    ports:
+      - "${POST_SERVICE_PORT}:8081"
+    depends_on:
+      - post-db
+    environment:
+      - DB_HOST=post-db
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${POST_DB_NAME}
+
+volumes:
+  user-db-data:
+  post-db-data:
+
+env_file:
+  - .env
+
+USER_SERVICE_PORT=8080
+POST_SERVICE_PORT=8081

@@ -32,5 +32,8 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 	r.GET("/posts/tag/:tagName", postHttp.GetPostsByTagHandler(postUC))
 	authGroup.GET("/timeline", postHttp.GetTimelineHandler(postUC))
 
+	authGroup.POST("/posts/:post_id/comments", postHttp.CreateCommentHandler(postUC))
+	authGroup.GET("/posts/:post_id/comments", postHttp.GetCommentsHandler(postUC))
+
 	return r
 }
