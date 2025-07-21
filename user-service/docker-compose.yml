@@ -1,13 +1,29 @@
 version: '3.8'
 services:
-  postgres:
-    image: postgres:15
+  user-db:
+    image: postgres
+    container_name: user-db
     environment:
+      POSTGRES_DB: user_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: user_db
-    ports:
-      - "5432:5432"
+
+  post-db:
+    image: postgres
+    container_name: post-db
+    environment:
+      POSTGRES_DB: post_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+  # postgres:
+  #   image: postgres:15
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: user_db
+  #   ports:
+  #     - "5432:5432"
 
   redis:
     image: redis:7
