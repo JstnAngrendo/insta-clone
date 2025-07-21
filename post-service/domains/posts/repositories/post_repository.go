@@ -29,6 +29,8 @@ type PostRepository interface {
 
 	FindPostsByTagPaginated(tagName string, offset int, limit int, posts *[]entities.Post) error
 	CountPostsByTag(tagName string, total *int64) error
+
+	GetPostsByUserIDs(userIDs []string) ([]entities.Post, error)
 }
 
 func NewPostRepository(db *gorm.DB) PostRepository {
@@ -147,4 +149,30 @@ func (r *postRepository) CountPostsByTag(tagName string, total *int64) error {
 		Joins("JOIN tags ON tags.id = post_tags.tag_id").
 		Where("LOWER(tags.name) = ?", strings.ToLower(tagName)).
 		Count(total).Error
+}
+
+// func (r *postRepository) FindPostsByUserIDs(userIDs []string, page, size int) ([]entities.Post, int, error) {
+// 	var posts []entities.Post
+// 	var count int64
+
+// 	offset := (page - 1) * size
+
+// 	err := r.db.
+// 		Model(&entities.Post{}).
+// 		Where("user_id IN ?", userIDs).
+// 		Count(&count).
+// 		Order("created_at DESC").
+// 		Limit(size).
+// 		Offset(offset).
+// 		Find(&posts).Error
+
+// 	totalPages := int(math.Ceil(float64(count) / float64(size)))
+
+// 	return posts, totalPages, err
+// }
+
+func (r *postRepository) GetPostsByUserIDs(userIDs []string) ([]entities.Post, error) {
+	var posts []entities.Post
+	err := r.db.Where("user_id IN (?)", userIDs).Order("created_at desc").Find(&posts).Error
+	return posts, err
 }

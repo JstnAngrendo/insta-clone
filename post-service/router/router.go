@@ -6,7 +6,7 @@ import (
 
 	postHttp "github.com/jstnangrendo/instagram-clone/post-service/domains/posts/handlers/http"
 	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/repositories"
-	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/usecases"
+	usecases "github.com/jstnangrendo/instagram-clone/post-service/domains/posts/usecases"
 	"github.com/jstnangrendo/instagram-clone/post-service/middlewares"
 )
 
@@ -14,7 +14,8 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 	r := gin.Default()
 
 	postRepo := repositories.NewPostRepository(db)
-	postUC := usecases.NewPostUsecase(postRepo)
+	userService := usecases.NewUserService()
+	postUC := usecases.NewPostUseCase(userService, postRepo)
 
 	authGroup := r.Group("/")
 	authGroup.Use(middlewares.AuthMiddleware())
@@ -29,6 +30,7 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 	authGroup.DELETE("/posts/:post_id/unlike", postHttp.UnlikePostHandler(postUC))
 
 	r.GET("/posts/tag/:tagName", postHttp.GetPostsByTagHandler(postUC))
+	authGroup.GET("/timeline", postHttp.GetTimelineHandler(postUC))
 
 	return r
 }

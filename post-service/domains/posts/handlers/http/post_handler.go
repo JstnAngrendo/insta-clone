@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -244,6 +245,79 @@ func GetPostsByTagHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 			Size:       size,
 			TotalPages: totalPages,
 			TotalItems: total,
+			Data:       postResponses,
+		})
+	}
+}
+func GetTimelineHandler(pu usecases.PostUsecase) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+
+		userID, ok := raw.(uint)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user_id"})
+			return
+		}
+
+		userIDStr := fmt.Sprintf("%d", userID)
+		fmt.Println("[INFO] userID from context:", userIDStr)
+
+		allPosts, err := pu.GetTimeline(userIDStr)
+		if err != nil {
+			fmt.Println("[ERROR] failed to get timeline:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get timeline"})
+			return
+		}
+
+		page, size := utils.GetPaginationParams(c)
+		fmt.Println("[INFO] Pagination - page:", page, "size:", size)
+
+		total := len(allPosts)
+		offset := (page - 1) * size
+		end := offset + size
+		if end > total {
+			end = total
+		}
+		if offset > total {
+			offset = total
+		}
+		paginated := allPosts[offset:end]
+
+		for i := range paginated {
+			likeCount, err := pu.CountLikes(paginated[i].ID)
+			if err != nil {
+				fmt.Println("[ERROR] failed to count likes for postID:", paginated[i].ID, "error:", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count likes"})
+				return
+			}
+			paginated[i].LikeCount = likeCount
+		}
+
+		postResponses := make([]responses.PostResponse, len(paginated))
+		for i, post := range paginated {
+			postResponses[i] = responses.PostResponse{
+				ID:           post.ID,
+				UserID:       post.UserID,
+				Caption:      post.Caption,
+				ImageURL:     post.ImageURL,
+				ThumbnailURL: post.ThumbnailURL,
+				CreatedAt:    post.CreatedAt,
+				LikeCount:    post.LikeCount,
+				Tags:         extractTagNames(post.Tags),
+			}
+		}
+
+		totalPages := (total + size - 1) / size
+		fmt.Println("[INFO] Returning", len(postResponses), "posts")
+		c.JSON(http.StatusOK, responses.PaginationResponse{
+			Page:       page,
+			Size:       size,
+			TotalPages: totalPages,
+			TotalItems: int64(total),
 			Data:       postResponses,
 		})
 	}

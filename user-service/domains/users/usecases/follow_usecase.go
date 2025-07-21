@@ -10,6 +10,7 @@ type FollowUsecase interface {
 	Follow(userID, targetID uint) error
 	Unfollow(userID, targetID uint) error
 	GetCounts(userID uint) (followers, following int64, err error)
+	GetFollowingUserIDs(userID uint) ([]uint, error)
 }
 
 type followUC struct {
@@ -65,4 +66,8 @@ func (u *followUC) GetCounts(userID uint) (followers, following int64, err error
 	}
 	following, err = u.repo.CountFollowing(userID)
 	return
+}
+
+func (u *followUC) GetFollowingUserIDs(userID uint) ([]uint, error) {
+	return u.repo.GetFollowingUserIDs(userID)
 }
