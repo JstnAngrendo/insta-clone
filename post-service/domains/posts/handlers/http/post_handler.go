@@ -5,8 +5,11 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/entities"
 	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/models/responses"
 	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/usecases"
+	infrastructure "github.com/jstnangrendo/instagram-clone/post-service/infrastructure/storage"
+	"github.com/jstnangrendo/instagram-clone/post-service/utils"
 )
 
 func CreatePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
@@ -18,29 +21,53 @@ func CreatePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 		}
 		userID := raw.(uint)
 
-		var req struct {
-			Caption  string `json:"caption"`
-			ImageURL string `json:"image_url"`
-		}
-		if err := c.BindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		caption := c.PostForm("caption")
+		file, err := c.FormFile("image")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "image is required"})
 			return
 		}
 
-		post, err := pu.Create(userID, req.Caption, req.ImageURL)
+		imageURL, err := infrastructure.UploadImage(c, file)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload image"})
+			return
+		}
+
+		thumbPath, err := utils.GenerateThumbnail("uploads/" + file.Filename)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate thumbnail"})
+			return
+		}
+
+		formTags := c.PostFormArray("tags")
+		tagEntities := utils.CleanTags(formTags)
+
+		post, err := pu.CreateWithTags(userID, caption, imageURL, thumbPath, tagEntities)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
 		c.JSON(http.StatusCreated, responses.PostResponse{
-			ID:        post.ID,
-			UserID:    post.UserID,
-			Caption:   post.Caption,
-			ImageURL:  post.ImageURL,
-			CreatedAt: post.CreatedAt,
+			ID:           post.ID,
+			UserID:       post.UserID,
+			Caption:      post.Caption,
+			ImageURL:     post.ImageURL,
+			ThumbnailURL: post.ThumbnailURL,
+			CreatedAt:    post.CreatedAt,
+			LikeCount:    post.LikeCount,
+			Tags:         extractTagNames(post.Tags),
 		})
 	}
+}
+
+func extractTagNames(tags []entities.Tag) []string {
+	names := make([]string, len(tags))
+	for i, tag := range tags {
+		names[i] = tag.Name
+	}
+	return names
 }
 
 func GetPostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
@@ -59,7 +86,7 @@ func GetUserPostsHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDInterface, exists := c.Get("user_id")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found in context"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 		loggedInUserID := userIDInterface.(uint)
@@ -69,18 +96,42 @@ func GetUserPostsHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id parameter"})
 			return
 		}
-
 		if uint(paramUserID) != loggedInUserID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "You are not allowed to access this resource"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 			return
 		}
 
-		posts, err := pu.GetByUser(loggedInUserID)
+		page, size := utils.GetPaginationParams(c)
+
+		posts, total, err := pu.GetByUserPaginated(loggedInUserID, page, size)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, posts)
+
+		postResponses := make([]responses.PostResponse, len(posts))
+		for i, post := range posts {
+			postResponses[i] = responses.PostResponse{
+				ID:           post.ID,
+				UserID:       post.UserID,
+				Caption:      post.Caption,
+				ImageURL:     post.ImageURL,
+				ThumbnailURL: post.ThumbnailURL,
+				CreatedAt:    post.CreatedAt,
+				LikeCount:    post.LikeCount,
+				Tags:         extractTagNames(post.Tags),
+			}
+		}
+
+		totalPages := int((total + int64(size) - 1) / int64(size))
+
+		c.JSON(http.StatusOK, responses.PaginationResponse{
+			Page:       page,
+			Size:       size,
+			TotalPages: totalPages,
+			TotalItems: total,
+			Data:       postResponses,
+		})
 	}
 }
 
@@ -102,7 +153,6 @@ func DeletePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 	}
 }
 
-// Like & Unlike Post
 func LikePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw, exists := c.Get("user_id")
@@ -160,5 +210,41 @@ func GetPostLikesHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"like_count": count})
+	}
+}
+
+func GetPostsByTagHandler(pu usecases.PostUsecase) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tagName := c.Param("tagName")
+		page, size := utils.GetPaginationParams(c)
+
+		posts, total, err := pu.GetPostsByTagPaginated(tagName, page, size)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve posts"})
+			return
+		}
+		totalPages := int((total + int64(size) - 1) / int64(size))
+
+		postResponses := make([]responses.PostResponse, len(posts))
+		for i, post := range posts {
+			postResponses[i] = responses.PostResponse{
+				ID:           post.ID,
+				UserID:       post.UserID,
+				Caption:      post.Caption,
+				ImageURL:     post.ImageURL,
+				ThumbnailURL: post.ThumbnailURL,
+				CreatedAt:    post.CreatedAt,
+				LikeCount:    post.LikeCount,
+				Tags:         extractTagNames(post.Tags),
+			}
+		}
+
+		c.JSON(http.StatusOK, responses.PaginationResponse{
+			Page:       page,
+			Size:       size,
+			TotalPages: totalPages,
+			TotalItems: total,
+			Data:       postResponses,
+		})
 	}
 }
