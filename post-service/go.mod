@@ -5,6 +5,7 @@ go 1.24.3
 require github.com/gin-gonic/gin v1.10.1
 
 require (
+	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.6.0 // indirect
@@ -15,6 +16,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
+	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	golang.org/x/sync v0.14.0 // indirect
 	gorm.io/gorm v1.25.10 // indirect
 )

@@ -28,5 +28,7 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 	authGroup.POST("/posts/:post_id/like", postHttp.LikePostHandler(postUC))
 	authGroup.DELETE("/posts/:post_id/unlike", postHttp.UnlikePostHandler(postUC))
 
+	r.GET("/posts/tag/:tagName", postHttp.GetPostsByTagHandler(postUC))
+
 	return r
 }
