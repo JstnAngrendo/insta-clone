@@ -31,9 +31,6 @@ type PostRepository interface {
 	CountPostsByTag(tagName string, total *int64) error
 
 	GetPostsByUserIDs(userIDs []string) ([]entities.Post, error)
-
-	SaveComment(comment *entities.Comment) error
-	FetchComments(postID uint) ([]entities.Comment, error)
 }
 
 func NewPostRepository(db *gorm.DB) PostRepository {
@@ -178,14 +175,4 @@ func (r *postRepository) GetPostsByUserIDs(userIDs []string) ([]entities.Post, e
 	var posts []entities.Post
 	err := r.db.Where("user_id IN (?)", userIDs).Order("created_at desc").Find(&posts).Error
 	return posts, err
-}
-
-func (r *postRepository) SaveComment(comment *entities.Comment) error {
-	return r.db.Create(comment).Error
-}
-
-func (r *postRepository) FetchComments(postID uint) ([]entities.Comment, error) {
-	var comments []entities.Comment
-	err := r.db.Where("post_id = ?", postID).Order("created_at asc").Find(&comments).Error
-	return comments, err
 }
