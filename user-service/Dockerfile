@@ -1,8 +1,7 @@
-FROM golang:1.21-alpine
-
-RUN apk update && apk add --no-cache git
+FROM golang:1.24.3 AS builder
 
 WORKDIR /app
+RUN apt-get update && apt-get install -y git
 
 COPY go.mod go.sum ./
 RUN go mod download
