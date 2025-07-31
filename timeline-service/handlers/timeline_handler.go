@@ -19,24 +19,17 @@ func NewTimelineHandler(uc usecases.TimelineUseCase, pc *client.PostClient) *Tim
 }
 
 func (h *TimelineHandler) GetTimeline(c *gin.Context) {
-	userIDStr := c.GetString("userID")
-	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	uid := c.Query("user_id")
+	userID, err := strconv.ParseInt(uid, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
 		return
 	}
-
 	ids, err := h.uc.FetchTimeline(c, userID, 20)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	posts, err := h.postCli.BatchGet(c, ids)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
+	posts, _ := h.postCli.BatchGet(c, ids)
 	c.JSON(http.StatusOK, posts)
 }

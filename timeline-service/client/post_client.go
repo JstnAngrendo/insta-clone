@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/models/dto"
 )
@@ -20,10 +21,27 @@ func NewPostClient(baseURL string) *PostClient {
 	return &PostClient{baseURL: baseURL}
 }
 
-func (c *PostClient) BatchGet(ctx context.Context, ids []string) ([]Post, error) {
+func (c *PostClient) BatchGet(ctx context.Context, strIDs []string) ([]Post, error) {
+	var ids []uint
+	for _, s := range strIDs {
+		n, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, uint(n))
+	}
+
+	body, err := json.Marshal(map[string][]uint{"ids": ids})
+	if err != nil {
+		return nil, err
+	}
+
 	url := fmt.Sprintf("%s/posts/batch", c.baseURL)
-	body, _ := json.Marshal(map[string][]string{"ids": ids})
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

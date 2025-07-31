@@ -1,12 +1,15 @@
 package router
 
 import (
+	"log"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	postHttp "github.com/jstnangrendo/instagram-clone/post-service/domains/posts/handlers/http"
 	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/repositories"
 	usecases "github.com/jstnangrendo/instagram-clone/post-service/domains/posts/usecases"
+	"github.com/jstnangrendo/instagram-clone/post-service/infrastructure/rabbitmq"
 	"github.com/jstnangrendo/instagram-clone/post-service/middlewares"
 )
 
@@ -15,7 +18,13 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 
 	postRepo := repositories.NewPostRepository(db)
 	userService := usecases.NewUserService()
-	postUC := usecases.NewPostUseCase(userService, postRepo)
+
+	publisher, err := rabbitmq.NewPublisher("amqp://guest:guest@localhost:5672/", "post_created_queue")
+	if err != nil {
+		log.Fatalf("Failed to create publisher: %v", err)
+	}
+
+	postUC := usecases.NewPostUseCase(userService, postRepo, publisher)
 
 	authGroup := r.Group("/")
 	authGroup.Use(middlewares.AuthMiddleware())
@@ -31,6 +40,7 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 
 	r.GET("/posts/tag/:tagName", postHttp.GetPostsByTagHandler(postUC))
 	authGroup.GET("/timeline", postHttp.GetTimelineHandler(postUC))
+	r.POST("/posts/batch", postHttp.BatchGetHandler(postUC))
 
 	return r
 }

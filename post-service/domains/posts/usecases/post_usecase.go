@@ -1,10 +1,13 @@
 package usecases
 
 import (
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/entities"
 	"github.com/jstnangrendo/instagram-clone/post-service/domains/posts/repositories"
+	"github.com/jstnangrendo/instagram-clone/post-service/infrastructure/rabbitmq"
 )
 
 type PostUsecase interface {
@@ -26,12 +29,14 @@ type PostUsecase interface {
 type postUC struct {
 	userService UserService
 	repo        repositories.PostRepository
+	publisher   *rabbitmq.Publisher
 }
 
-func NewPostUseCase(userSvc UserService, postRepo repositories.PostRepository) PostUsecase {
+func NewPostUseCase(userSvc UserService, postRepo repositories.PostRepository, publisher *rabbitmq.Publisher) PostUsecase {
 	return &postUC{
 		userService: userSvc,
 		repo:        postRepo,
+		publisher:   publisher,
 	}
 }
 
@@ -46,6 +51,20 @@ func (u *postUC) Create(userID uint, caption, imageURL string) (*entities.Post, 
 	if err := u.repo.Create(post); err != nil {
 		return nil, err
 	}
+
+	event := map[string]interface{}{
+		"user_id": post.UserID,
+		"post_id": post.ID,
+		"caption": post.Caption,
+	}
+
+	err := u.publisher.Publish(event)
+	if err != nil {
+		log.Printf("Failed to publish post_created event: %v", err)
+	} else {
+		fmt.Println("Published post_created event:", event)
+	}
+
 	return post, nil
 }
 
@@ -109,6 +128,16 @@ func (uc *postUC) CreateWithTags(userID uint, caption, imageURL, thumbnailURL st
 	err := uc.repo.CreateWithTags(post, tags)
 	if err != nil {
 		return nil, err
+	}
+	event := map[string]interface{}{
+		"user_id": post.UserID,
+		"post_id": post.ID,
+		"caption": post.Caption,
+	}
+	if err := uc.publisher.Publish(event); err != nil {
+		log.Printf("[CreateWithTags] Failed to publish post_created: %v", err)
+	} else {
+		log.Printf("[CreateWithTags] Published post_created event: %+v", event)
 	}
 
 	return post, nil
