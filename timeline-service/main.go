@@ -10,7 +10,9 @@ import (
 	"github.com/jstnangrendo/instagram-clone/timeline-service/domains/timeline/entities"
 	"github.com/jstnangrendo/instagram-clone/timeline-service/domains/timeline/repositories"
 	"github.com/jstnangrendo/instagram-clone/timeline-service/domains/timeline/usecases"
+	"github.com/jstnangrendo/instagram-clone/timeline-service/handlers"
 	"github.com/jstnangrendo/instagram-clone/timeline-service/infrastructure/rabbitmq"
+	"github.com/jstnangrendo/instagram-clone/timeline-service/router"
 )
 
 func main() {
@@ -28,7 +30,7 @@ func main() {
 	config.InitDatabase()
 	config.DB.AutoMigrate(&entities.Timeline{})
 	timelineRepo := repositories.NewRedisRepository(redisClient)
-	followerService := client.NewFollowerService("http://localhost:8081")
+	followerService := client.NewFollowerService("http://localhost:8080")
 
 	timelineUsecase := usecases.NewTimelineUseCase(timelineRepo, followerService)
 
@@ -44,6 +46,15 @@ func main() {
 		log.Fatalf("Failed to start consuming messages: %v", err)
 	}
 
-	log.Println("Timeline service is running on port 8084...")
+	postCli := client.NewPostClient("http://localhost:8081")
+	handler := handlers.NewTimelineHandler(timelineUsecase, postCli)
+	httpSrv := router.SetupRouter(handler)
+	go func() {
+		log.Println("HTTP server running on :8084")
+		if err := httpSrv.Run(":8084"); err != nil {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+
 	select {}
 }

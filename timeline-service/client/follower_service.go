@@ -4,19 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
-type followerServiceClient struct {
+type FollowerServiceClient struct {
 	baseURL string
 }
 
-func NewFollowerService(baseURL string) *followerServiceClient {
-	return &followerServiceClient{baseURL: baseURL}
+func NewFollowerService(baseURL string) *FollowerServiceClient {
+	return &FollowerServiceClient{baseURL: baseURL}
 }
 
-func (f *followerServiceClient) GetFollowers(ctx context.Context, userID int64) ([]int64, error) {
-	url := fmt.Sprintf("%s/followers/%d", f.baseURL, userID)
+func (c *FollowerServiceClient) GetFollowers(ctx context.Context, userID int64) ([]int64, error) {
+	url := fmt.Sprintf("%s/users/%d/following-ids", c.baseURL, userID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -28,10 +29,16 @@ func (f *followerServiceClient) GetFollowers(ctx context.Context, userID int64) 
 	}
 	defer resp.Body.Close()
 
-	var followers []int64
-	if err := json.NewDecoder(resp.Body).Decode(&followers); err != nil {
+	var result struct {
+		FollowingIDs []int64 `json:"following_ids"`
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, err
 	}
 
-	return followers, nil
+	return result.FollowingIDs, nil
 }
