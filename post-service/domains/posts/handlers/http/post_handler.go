@@ -13,44 +13,105 @@ import (
 	"github.com/jstnangrendo/instagram-clone/post-service/utils"
 )
 
-func CreatePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-		userID := raw.(uint)
+type PostHandler struct {
+	uc usecases.PostUsecase
+}
 
-		caption := c.PostForm("caption")
-		file, err := c.FormFile("image")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "image is required"})
-			return
-		}
+func NewPostHandler(uc usecases.PostUsecase) *PostHandler {
+	return &PostHandler{uc: uc}
+}
 
-		imageURL, err := infrastructure.UploadImage(c, file)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload image"})
-			return
-		}
+func (h *PostHandler) Create(c *gin.Context) {
+	raw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID := raw.(uint)
 
-		thumbPath, err := utils.GenerateThumbnail("uploads/" + file.Filename)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate thumbnail"})
-			return
-		}
+	caption := c.PostForm("caption")
+	file, err := c.FormFile("image")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image is required"})
+		return
+	}
 
-		formTags := c.PostFormArray("tags")
-		tagEntities := utils.CleanTags(formTags)
+	imageURL, err := infrastructure.UploadImage(c, file)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload image"})
+		return
+	}
 
-		post, err := pu.CreateWithTags(userID, caption, imageURL, thumbPath, tagEntities)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	thumbPath, err := utils.GenerateThumbnail("uploads/" + file.Filename)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate thumbnail"})
+		return
+	}
 
-		c.JSON(http.StatusCreated, responses.PostResponse{
+	formTags := c.PostFormArray("tags")
+	tagEntities := utils.CleanTags(formTags)
+
+	post, err := h.uc.CreateWithTags(userID, caption, imageURL, thumbPath, tagEntities)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, responses.PostResponse{
+		ID:           post.ID,
+		UserID:       post.UserID,
+		Caption:      post.Caption,
+		ImageURL:     post.ImageURL,
+		ThumbnailURL: post.ThumbnailURL,
+		CreatedAt:    post.CreatedAt,
+		LikeCount:    post.LikeCount,
+		Tags:         extractTagNames(post.Tags),
+	})
+}
+
+func (h *PostHandler) GetByID(c *gin.Context) {
+	param, _ := strconv.ParseUint(c.Param("post_id"), 10, 64)
+	post, err := h.uc.GetByID(uint(param))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "post not found"})
+		return
+	}
+	c.JSON(http.StatusOK, responses.PostResponse{
+		ID:           post.ID,
+		UserID:       post.UserID,
+		Caption:      post.Caption,
+		ImageURL:     post.ImageURL,
+		ThumbnailURL: post.ThumbnailURL,
+		CreatedAt:    post.CreatedAt,
+		LikeCount:    post.LikeCount,
+		Tags:         extractTagNames(post.Tags),
+	})
+}
+
+func (h *PostHandler) GetByUser(c *gin.Context) {
+	raw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	logged := raw.(uint)
+
+	param, err := strconv.ParseUint(c.Param("user_id"), 10, 64)
+	if err != nil || uint(param) != logged {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
+	page, size := utils.GetPaginationParams(c)
+	posts, total, err := h.uc.GetByUserPaginated(logged, page, size)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp := make([]responses.PostResponse, len(posts))
+	for i, post := range posts {
+		resp[i] = responses.PostResponse{
 			ID:           post.ID,
 			UserID:       post.UserID,
 			Caption:      post.Caption,
@@ -59,267 +120,117 @@ func CreatePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
 			CreatedAt:    post.CreatedAt,
 			LikeCount:    post.LikeCount,
 			Tags:         extractTagNames(post.Tags),
-		})
+		}
 	}
+	c.JSON(http.StatusOK, responses.PaginationResponse{
+		Page:       page,
+		Size:       size,
+		TotalPages: int((total + int64(size) - 1) / int64(size)),
+		TotalItems: total,
+		Data:       resp,
+	})
+}
+
+func (h *PostHandler) Delete(c *gin.Context) {
+	raw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID := raw.(uint)
+
+	param, _ := strconv.ParseUint(c.Param("post_id"), 10, 64)
+	er := h.uc.Delete(uint(param), userID)
+	if er != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": er.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "post deleted"})
+}
+
+func (h *PostHandler) Timeline(c *gin.Context) {
+	raw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID := raw.(uint)
+	userIDStr := fmt.Sprintf("%d", userID)
+
+	posts, err := h.uc.GetTimeline(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get timeline"})
+		return
+	}
+
+	page, size := utils.GetPaginationParams(c)
+	total := len(posts)
+	offset := (page - 1) * size
+	end := offset + size
+	if end > total {
+		end = total
+	}
+
+	slice := posts[offset:end]
+	resp := make([]responses.PostResponse, len(slice))
+	for i, post := range slice {
+		resp[i] = responses.PostResponse{
+			ID:           post.ID,
+			UserID:       post.UserID,
+			Caption:      post.Caption,
+			ImageURL:     post.ImageURL,
+			ThumbnailURL: post.ThumbnailURL,
+			CreatedAt:    post.CreatedAt,
+			LikeCount:    post.LikeCount,
+			Tags:         extractTagNames(post.Tags),
+		}
+	}
+	totalPages := (total + size - 1) / size
+
+	c.JSON(http.StatusOK, responses.PaginationResponse{
+		Page:       page,
+		Size:       size,
+		TotalPages: totalPages,
+		TotalItems: int64(total),
+		Data:       resp,
+	})
+}
+
+func (h *PostHandler) GetByTag(c *gin.Context) {
+	tag := c.Param("tagName")
+	page, size := utils.GetPaginationParams(c)
+	posts, total, err := h.uc.GetPostsByTagPaginated(tag, page, size)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve posts"})
+		return
+	}
+
+	resp := make([]responses.PostResponse, len(posts))
+	for i, post := range posts {
+		resp[i] = responses.PostResponse{
+			ID:           post.ID,
+			UserID:       post.UserID,
+			Caption:      post.Caption,
+			ImageURL:     post.ImageURL,
+			ThumbnailURL: post.ThumbnailURL,
+			CreatedAt:    post.CreatedAt,
+			LikeCount:    post.LikeCount,
+			Tags:         extractTagNames(post.Tags),
+		}
+	}
+	c.JSON(http.StatusOK, responses.PaginationResponse{
+		Page:       page,
+		Size:       size,
+		TotalPages: int((total + int64(size) - 1) / int64(size)),
+		TotalItems: total,
+		Data:       resp,
+	})
 }
 
 func extractTagNames(tags []entities.Tag) []string {
 	names := make([]string, len(tags))
-	for i, tag := range tags {
-		names[i] = tag.Name
+	for i, t := range tags {
+		names[i] = t.Name
 	}
 	return names
 }
-
-func GetPostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		postID, _ := strconv.ParseUint(c.Param("post_id"), 10, 64)
-		post, err := pu.GetByID(uint(postID))
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "post not found"})
-			return
-		}
-		c.JSON(http.StatusOK, post)
-	}
-}
-
-func GetUserPostsHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userIDInterface, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-		loggedInUserID := userIDInterface.(uint)
-
-		paramUserID, err := strconv.ParseUint(c.Param("user_id"), 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id parameter"})
-			return
-		}
-		if uint(paramUserID) != loggedInUserID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
-			return
-		}
-
-		page, size := utils.GetPaginationParams(c)
-
-		posts, total, err := pu.GetByUserPaginated(loggedInUserID, page, size)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		postResponses := make([]responses.PostResponse, len(posts))
-		for i, post := range posts {
-			postResponses[i] = responses.PostResponse{
-				ID:           post.ID,
-				UserID:       post.UserID,
-				Caption:      post.Caption,
-				ImageURL:     post.ImageURL,
-				ThumbnailURL: post.ThumbnailURL,
-				CreatedAt:    post.CreatedAt,
-				LikeCount:    post.LikeCount,
-				Tags:         extractTagNames(post.Tags),
-			}
-		}
-
-		totalPages := int((total + int64(size) - 1) / int64(size))
-
-		c.JSON(http.StatusOK, responses.PaginationResponse{
-			Page:       page,
-			Size:       size,
-			TotalPages: totalPages,
-			TotalItems: total,
-			Data:       postResponses,
-		})
-	}
-}
-
-func DeletePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-		userID := raw.(uint)
-
-		postID, _ := strconv.ParseUint(c.Param("post_id"), 10, 64)
-		if err := pu.Delete(uint(postID), userID); err != nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "post deleted"})
-	}
-}
-
-func LikePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-		userID := raw.(uint)
-
-		postID, _ := strconv.Atoi(c.Param("post_id"))
-
-		err := pu.LikePost(userID, uint(postID))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"message": "post liked"})
-	}
-}
-
-func UnlikePostHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-		userID := raw.(uint)
-
-		postID, _ := strconv.Atoi(c.Param("post_id"))
-
-		err := pu.UnlikePost(userID, uint(postID))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"message": "post unliked"})
-	}
-}
-
-func GetPostLikesHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		postID, err := strconv.Atoi(c.Param("post_id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid post id"})
-			return
-		}
-
-		count, err := pu.CountLikes(uint(postID))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count likes"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"like_count": count})
-	}
-}
-
-func GetPostsByTagHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tagName := c.Param("tagName")
-		page, size := utils.GetPaginationParams(c)
-
-		posts, total, err := pu.GetPostsByTagPaginated(tagName, page, size)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve posts"})
-			return
-		}
-		totalPages := int((total + int64(size) - 1) / int64(size))
-
-		postResponses := make([]responses.PostResponse, len(posts))
-		for i, post := range posts {
-			postResponses[i] = responses.PostResponse{
-				ID:           post.ID,
-				UserID:       post.UserID,
-				Caption:      post.Caption,
-				ImageURL:     post.ImageURL,
-				ThumbnailURL: post.ThumbnailURL,
-				CreatedAt:    post.CreatedAt,
-				LikeCount:    post.LikeCount,
-				Tags:         extractTagNames(post.Tags),
-			}
-		}
-
-		c.JSON(http.StatusOK, responses.PaginationResponse{
-			Page:       page,
-			Size:       size,
-			TotalPages: totalPages,
-			TotalItems: total,
-			Data:       postResponses,
-		})
-	}
-}
-func GetTimelineHandler(pu usecases.PostUsecase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-
-		userID, ok := raw.(uint)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user_id"})
-			return
-		}
-
-		userIDStr := fmt.Sprintf("%d", userID)
-		fmt.Println("[INFO] userID from context:", userIDStr)
-
-		allPosts, err := pu.GetTimeline(userIDStr)
-		if err != nil {
-			fmt.Println("[ERROR] failed to get timeline:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get timeline"})
-			return
-		}
-
-		page, size := utils.GetPaginationParams(c)
-		fmt.Println("[INFO] Pagination - page:", page, "size:", size)
-
-		total := len(allPosts)
-		offset := (page - 1) * size
-		end := offset + size
-		if end > total {
-			end = total
-		}
-		if offset > total {
-			offset = total
-		}
-		paginated := allPosts[offset:end]
-
-		for i := range paginated {
-			likeCount, err := pu.CountLikes(paginated[i].ID)
-			if err != nil {
-				fmt.Println("[ERROR] failed to count likes for postID:", paginated[i].ID, "error:", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count likes"})
-				return
-			}
-			paginated[i].LikeCount = likeCount
-		}
-
-		postResponses := make([]responses.PostResponse, len(paginated))
-		for i, post := range paginated {
-			postResponses[i] = responses.PostResponse{
-				ID:           post.ID,
-				UserID:       post.UserID,
-				Caption:      post.Caption,
-				ImageURL:     post.ImageURL,
-				ThumbnailURL: post.ThumbnailURL,
-				CreatedAt:    post.CreatedAt,
-				LikeCount:    post.LikeCount,
-				Tags:         extractTagNames(post.Tags),
-			}
-		}
-
-		totalPages := (total + size - 1) / size
-		fmt.Println("[INFO] Returning", len(postResponses), "posts")
-		c.JSON(http.StatusOK, responses.PaginationResponse{
-			Page:       page,
-			Size:       size,
-			TotalPages: totalPages,
-			TotalItems: int64(total),
-			Data:       postResponses,
-		})
-	}
-}
-

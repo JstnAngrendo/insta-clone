@@ -15,9 +15,7 @@ type PostUsecase interface {
 	GetByID(postID uint) (*entities.Post, error)
 	GetByUser(userID uint) ([]entities.Post, error)
 	Delete(postID, userID uint) error
-	LikePost(userID, postID uint) error
-	UnlikePost(userID, postID uint) error
-	CountLikes(postID uint) (int64, error)
+
 	CreateWithTags(userID uint, caption, imageURL, thumbnailURL string, tags []entities.Tag) (*entities.Post, error)
 	GetPostsByTag(tagName string) ([]entities.Post, error)
 
@@ -27,17 +25,12 @@ type PostUsecase interface {
 }
 
 type postUC struct {
-	userService UserService
-	repo        repositories.PostRepository
-	publisher   *rabbitmq.Publisher
+	repo      repositories.PostRepository
+	publisher *rabbitmq.Publisher
 }
 
-func NewPostUseCase(userSvc UserService, postRepo repositories.PostRepository, publisher *rabbitmq.Publisher) PostUsecase {
-	return &postUC{
-		userService: userSvc,
-		repo:        postRepo,
-		publisher:   publisher,
-	}
+func NewPostUseCase(repo repositories.PostRepository, publisher *rabbitmq.Publisher) PostUsecase {
+	return &postUC{repo: repo, publisher: publisher}
 }
 
 func (u *postUC) Create(userID uint, caption, imageURL string) (*entities.Post, error) {
@@ -47,76 +40,36 @@ func (u *postUC) Create(userID uint, caption, imageURL string) (*entities.Post, 
 		ImageURL:  imageURL,
 		CreatedAt: time.Now(),
 	}
-
 	if err := u.repo.Create(post); err != nil {
 		return nil, err
 	}
-
 	event := map[string]interface{}{
-		"user_id": post.UserID,
 		"post_id": post.ID,
+		"user_id": post.UserID,
 		"caption": post.Caption,
 	}
-
-	err := u.publisher.Publish(event)
-	if err != nil {
+	if err := u.publisher.Publish(event); err != nil {
 		log.Printf("Failed to publish post_created event: %v", err)
 	} else {
 		fmt.Println("Published post_created event:", event)
 	}
-
 	return post, nil
 }
 
 func (u *postUC) GetByID(postID uint) (*entities.Post, error) {
 	post, err := u.repo.FindByID(postID)
-	if err != nil {
-		return nil, err
-	}
-
-	likeCount, err := u.repo.CountLikes(postID)
-	if err != nil {
-		return nil, err
-	}
-	post.LikeCount = likeCount
-
-	return post, nil
+	return post, err
 }
 
 func (u *postUC) GetByUser(userID uint) ([]entities.Post, error) {
-	posts, err := u.repo.FindByUserID(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range posts {
-		likeCount, err := u.repo.CountLikes(posts[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		posts[i].LikeCount = likeCount
-	}
-
-	return posts, nil
+	return u.repo.FindByUserID(userID)
 }
 
 func (u *postUC) Delete(postID, userID uint) error {
 	return u.repo.Delete(postID, userID)
 }
 
-func (u *postUC) LikePost(userID, postID uint) error {
-	return u.repo.LikePost(userID, postID)
-}
-
-func (u *postUC) UnlikePost(userID, postID uint) error {
-	return u.repo.UnlikePost(userID, postID)
-}
-
-func (u *postUC) CountLikes(postID uint) (int64, error) {
-	return u.repo.CountLikes(postID)
-}
-
-func (uc *postUC) CreateWithTags(userID uint, caption, imageURL, thumbnailURL string, tags []entities.Tag) (*entities.Post, error) {
+func (u *postUC) CreateWithTags(userID uint, caption, imageURL, thumbnailURL string, tags []entities.Tag) (*entities.Post, error) {
 	post := &entities.Post{
 		UserID:       userID,
 		Caption:      caption,
@@ -124,93 +77,60 @@ func (uc *postUC) CreateWithTags(userID uint, caption, imageURL, thumbnailURL st
 		ThumbnailURL: thumbnailURL,
 		CreatedAt:    time.Now(),
 	}
-
-	err := uc.repo.CreateWithTags(post, tags)
-	if err != nil {
+	if err := u.repo.CreateWithTags(post, tags); err != nil {
 		return nil, err
 	}
 	event := map[string]interface{}{
-		"user_id": post.UserID,
 		"post_id": post.ID,
+		"user_id": post.UserID,
 		"caption": post.Caption,
 	}
-	if err := uc.publisher.Publish(event); err != nil {
-		log.Printf("[CreateWithTags] Failed to publish post_created: %v", err)
+	if err := u.publisher.Publish(event); err != nil {
+		log.Printf("Failed to publish post_created event: %v", err)
 	} else {
-		log.Printf("[CreateWithTags] Published post_created event: %+v", event)
+		fmt.Println("Published post_created event:", event)
 	}
-
 	return post, nil
 }
 
-func (uc *postUC) GetPostsByTag(tagName string) ([]entities.Post, error) {
-	return uc.repo.FindPostsByTag(tagName)
+func (u *postUC) GetPostsByTag(tagName string) ([]entities.Post, error) {
+	return u.repo.FindPostsByTag(tagName)
 }
 
-func (uc *postUC) GetByUserPaginated(userID uint, page int, size int) ([]entities.Post, int64, error) {
+func (u *postUC) GetByUserPaginated(userID uint, page int, size int) ([]entities.Post, int64, error) {
 	offset := (page - 1) * size
 	var posts []entities.Post
 	var total int64
 
-	err := uc.repo.CountByUser(userID, &total)
+	err := u.repo.CountByUser(userID, &total)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	err = uc.repo.FindByUserPaginated(userID, offset, size, &posts)
+	err = u.repo.FindByUserPaginated(userID, offset, size, &posts)
 	if err != nil {
 		return nil, 0, err
 	}
-
-	for i := range posts {
-		likeCount, err := uc.repo.CountLikes(posts[i].ID)
-		if err != nil {
-			return nil, 0, err
-		}
-		posts[i].LikeCount = likeCount
-	}
-
 	return posts, total, nil
 }
 
-func (uc *postUC) GetPostsByTagPaginated(tagName string, page int, size int) ([]entities.Post, int64, error) {
+func (u *postUC) GetPostsByTagPaginated(tagName string, page int, size int) ([]entities.Post, int64, error) {
 	offset := (page - 1) * size
 	var posts []entities.Post
 	var total int64
 
-	err := uc.repo.CountPostsByTag(tagName, &total)
+	err := u.repo.CountPostsByTag(tagName, &total)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	err = uc.repo.FindPostsByTagPaginated(tagName, offset, size, &posts)
+	err = u.repo.FindPostsByTagPaginated(tagName, offset, size, &posts)
 	if err != nil {
 		return nil, 0, err
 	}
-
-	for i := range posts {
-		likeCount, err := uc.repo.CountLikes(posts[i].ID)
-		if err != nil {
-			return nil, 0, err
-		}
-		posts[i].LikeCount = likeCount
-	}
-
 	return posts, total, nil
 }
 
-func (uc *postUC) GetTimeline(userID string) ([]entities.Post, error) {
-	followingIDs, err := uc.userService.GetFollowingUserIDs(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	followingIDs = append(followingIDs, userID)
-
-	posts, err := uc.repo.GetPostsByUserIDs(followingIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	return posts, nil
+func (u *postUC) GetTimeline(userID string) ([]entities.Post, error) {
+	return u.repo.GetPostsByUserIDs([]string{userID})
 }

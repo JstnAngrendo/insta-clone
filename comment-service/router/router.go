@@ -20,7 +20,7 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 	authGroup.Use(middlewares.AuthMiddleware())
 
 	authGroup.POST("/posts/:post_id/comments", commentHttp.CreateCommentHandler(commentUC))
-	authGroup.GET("/posts/:post_id/comments", commentHttp.GetCommentsHandler(commentUC))
+	r.GET("/posts/:post_id/comments", commentHttp.GetCommentsHandler(commentUC))
 
 	return r
 }

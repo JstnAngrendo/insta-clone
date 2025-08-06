@@ -11,7 +11,6 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// Consumer wraps RabbitMQ connection and queue consumer
 type Consumer struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
@@ -19,7 +18,6 @@ type Consumer struct {
 	repo    repositories.RedisRepository
 }
 
-// NewConsumer initializes RabbitMQ consumer
 func NewConsumer(amqpURL string, uc usecases.TimelineUseCase) (*Consumer, error) {
 	conn, err := amqp.Dial(amqpURL)
 	if err != nil {
@@ -33,9 +31,7 @@ func NewConsumer(amqpURL string, uc usecases.TimelineUseCase) (*Consumer, error)
 	return &Consumer{conn: conn, channel: ch, usecase: uc}, nil
 }
 
-// StartConsuming begins reading from the specified queue
 func (c *Consumer) StartConsuming(queueName string) error {
-	// Declare queue in case not existing
 	_, err := c.channel.QueueDeclare(
 		queueName, true, false, false, false, nil,
 	)
@@ -56,7 +52,6 @@ func (c *Consumer) StartConsuming(queueName string) error {
 				continue
 			}
 			log.Printf("[Consumer] Parsed event: %+v", evt)
-			// Process and write to Redis timeline
 			if err := c.usecase.ProcessNewPost(context.Background(), evt); err != nil {
 				log.Printf("[Consumer] UseCase error: %v", err)
 			} else {
@@ -67,7 +62,6 @@ func (c *Consumer) StartConsuming(queueName string) error {
 	return nil
 }
 
-// Close closes RabbitMQ connection and channel
 func (c *Consumer) Close() {
 	if c.channel != nil {
 		c.channel.Close()

@@ -17,30 +17,28 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 	r := gin.Default()
 
 	postRepo := repositories.NewPostRepository(db)
-	userService := usecases.NewUserService()
 
 	publisher, err := rabbitmq.NewPublisher("amqp://guest:guest@localhost:5672/", "post_created_queue")
 	if err != nil {
-		log.Fatalf("Failed to create publisher: %v", err)
+		log.Fatalf("Failed to create RabbitMQ publisher: %v", err)
 	}
 
-	postUC := usecases.NewPostUseCase(userService, postRepo, publisher)
+	postUC := usecases.NewPostUseCase(postRepo, publisher)
 
-	authGroup := r.Group("/")
-	authGroup.Use(middlewares.AuthMiddleware())
+	h := postHttp.NewPostHandler(postUC)
 
-	authGroup.POST("/posts", postHttp.CreatePostHandler(postUC))
-	authGroup.DELETE("/posts/:post_id", postHttp.DeletePostHandler(postUC))
-
-	r.GET("/posts/:post_id", postHttp.GetPostHandler(postUC))
-	authGroup.GET("/users/:user_id/posts", postHttp.GetUserPostsHandler(postUC))
-
-	authGroup.POST("/posts/:post_id/like", postHttp.LikePostHandler(postUC))
-	authGroup.DELETE("/posts/:post_id/unlike", postHttp.UnlikePostHandler(postUC))
-
-	r.GET("/posts/tag/:tagName", postHttp.GetPostsByTagHandler(postUC))
-	authGroup.GET("/timeline", postHttp.GetTimelineHandler(postUC))
+	r.GET("/posts/:post_id", h.GetByID)
+	r.GET("/posts/tag/:tagName", h.GetByTag)
 	r.POST("/posts/batch", postHttp.BatchGetHandler(postUC))
+
+	auth := r.Group("/")
+	auth.Use(middlewares.AuthMiddleware())
+	{
+		auth.POST("/posts", h.Create)
+		auth.DELETE("/posts/:post_id", h.Delete)
+		auth.GET("/users/:user_id/posts", h.GetByUser)
+		auth.GET("/timeline", h.Timeline)
+	}
 
 	return r
 }

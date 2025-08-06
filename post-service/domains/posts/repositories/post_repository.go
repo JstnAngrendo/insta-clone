@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"context"
 	"log"
 	"strings"
 
@@ -18,9 +19,6 @@ type PostRepository interface {
 	FindByUserID(userID uint) ([]entities.Post, error)
 	Delete(id uint, userID uint) error
 
-	LikePost(userID, postID uint) error
-	UnlikePost(userID, postID uint) error
-	CountLikes(postID uint) (int64, error)
 	CreateWithTags(post *entities.Post, tags []entities.Tag) error
 	FindPostsByTag(tagName string) ([]entities.Post, error)
 
@@ -31,6 +29,8 @@ type PostRepository interface {
 	CountPostsByTag(tagName string, total *int64) error
 
 	GetPostsByUserIDs(userIDs []string) ([]entities.Post, error)
+
+	UpdateLikeCount(ctx context.Context, postID uint, delta int64) error
 }
 
 func NewPostRepository(db *gorm.DB) PostRepository {
@@ -58,26 +58,6 @@ func (r *postRepository) FindByUserID(userID uint) ([]entities.Post, error) {
 
 func (r *postRepository) Delete(id uint, userID uint) error {
 	return r.db.Where("id = ? AND user_id = ?", id, userID).Delete(&entities.Post{}).Error
-}
-
-func (r *postRepository) LikePost(userID, postID uint) error {
-	like := entities.PostLike{
-		UserID: userID,
-		PostID: postID,
-	}
-	return r.db.Create(&like).Error
-}
-
-func (r *postRepository) UnlikePost(userID, postID uint) error {
-	return r.db.Where("user_id = ? AND post_id = ?", userID, postID).Delete(&entities.PostLike{}).Error
-}
-
-func (r *postRepository) CountLikes(postID uint) (int64, error) {
-	var count int64
-	err := r.db.Model(&entities.PostLike{}).
-		Where("post_id = ?", postID).
-		Count(&count).Error
-	return count, err
 }
 
 func (r *postRepository) CreateWithTags(post *entities.Post, tags []entities.Tag) error {
@@ -151,28 +131,14 @@ func (r *postRepository) CountPostsByTag(tagName string, total *int64) error {
 		Count(total).Error
 }
 
-// func (r *postRepository) FindPostsByUserIDs(userIDs []string, page, size int) ([]entities.Post, int, error) {
-// 	var posts []entities.Post
-// 	var count int64
-
-// 	offset := (page - 1) * size
-
-// 	err := r.db.
-// 		Model(&entities.Post{}).
-// 		Where("user_id IN ?", userIDs).
-// 		Count(&count).
-// 		Order("created_at DESC").
-// 		Limit(size).
-// 		Offset(offset).
-// 		Find(&posts).Error
-
-// 	totalPages := int(math.Ceil(float64(count) / float64(size)))
-
-// 	return posts, totalPages, err
-// }
-
 func (r *postRepository) GetPostsByUserIDs(userIDs []string) ([]entities.Post, error) {
 	var posts []entities.Post
 	err := r.db.Where("user_id IN (?)", userIDs).Order("created_at desc").Find(&posts).Error
 	return posts, err
+}
+
+func (r *postRepository) UpdateLikeCount(ctx context.Context, postID uint, delta int64) error {
+	return r.db.Model(&entities.Post{}).
+		Where("id = ?", postID).
+		UpdateColumn("like_count", gorm.Expr("like_count + ?", delta)).Error
 }

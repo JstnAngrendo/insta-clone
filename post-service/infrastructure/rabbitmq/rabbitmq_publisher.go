@@ -48,12 +48,11 @@ func (p *Publisher) Publish(body interface{}) error {
 		return err
 	}
 
-	// Log payload sebelum publish
 	log.Printf("[Publisher] Publishing to queue %s: %s", p.queue.Name, data)
 
 	err = p.channel.Publish(
-		"",           // exchange
-		p.queue.Name, // routing key = queue name
+		"",
+		p.queue.Name,
 		false, false,
 		amqp.Publishing{
 			ContentType: "application/json",
